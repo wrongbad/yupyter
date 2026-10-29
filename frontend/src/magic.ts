@@ -8,5 +8,8 @@ export interface ParsedPrompt {
 }
 
 export function parsePrompt(text: string, defaultKernel: string): ParsedPrompt {
+  // Minimal `%%claude` handling (the magics work supersedes this).
+  const m = /^%%claude[ \t]*\n?([\s\S]*)$/.exec(text);
+  if (m) return { kind: "code", kernel: "agent:claude", source: m[1] };
   return { kind: "code", kernel: defaultKernel, source: text };
 }

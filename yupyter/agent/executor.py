@@ -344,7 +344,7 @@ class SdkBackend:
             prompt = run.rendered.text()
         qfn = self._query_fn or sdk_query
         stream = run.stream
-        streamed = False  # partial events seen for the current assistant message
+        streamed = False  # once partial events flow, AssistantMessage blocks are duplicates
         gen = qfn(prompt=prompt() if callable(prompt) else prompt, options=options)
         try:
             async for msg in gen:
@@ -353,9 +353,8 @@ class SdkBackend:
                     et = ev.get("type")
                     if msg.parent_tool_use_id:
                         continue
-                    if et == "message_start":
-                        streamed = True
-                    elif et == "content_block_start":
+                    streamed = True
+                    if et == "content_block_start":
                         kind = (ev.get("content_block") or {}).get("type")
                         if kind in ("thinking", "text"):
                             stream.begin(kind)
@@ -377,7 +376,6 @@ class SdkBackend:
                             elif isinstance(b, TextBlock):
                                 stream.begin("text")
                                 stream.text(b.text)
-                    streamed = False
                 elif isinstance(msg, ResultMessage):
                     if msg.subtype == "error_max_turns":
                         stream.note("stopped: turn limit reached")
@@ -413,8 +411,10 @@ class FakeBackend:
     """
 
     def __init__(self, script: list[dict[str, Any]] | dict[str, Any], chunk: int = 16, delay: float = 0.01):
-        self.steps = script["steps"] if isinstance(script, dict) else script
-        self.chunk, self.delay = chunk, delay
+        if isinstance(script, dict):  # {"steps": [...], "chunk": 8, "delay": 0.05}
+            chunk, delay = script.get("chunk", chunk), script.get("delay", delay)
+            script = script["steps"]
+        self.steps, self.chunk, self.delay = script, chunk, delay
 
     @classmethod
     def from_file(cls, path: str) -> "FakeBackend":
@@ -496,7 +496,6 @@ class ClaudeAgentExecutor:
         self._backend = backend
         self._run_task: asyncio.Task | None = None
         self._toolbox: Toolbox | None = None
-        self._ctx: RunContext | None = None
         self._interrupted = False
 
     is_started = True
@@ -508,7 +507,6 @@ class ClaudeAgentExecutor:
         settings = agent_settings()
         doc = ctx.doc
         self._interrupted = False
-        self._ctx = ctx
         stream = AgentStream(doc, cell_id)
         error: AgentError | None = None
         try:
@@ -568,12 +566,8 @@ class ClaudeAgentExecutor:
 
     async def interrupt(self) -> None:
         self._interrupted = True
-        tb, ctx = self._toolbox, self._ctx
-        if tb is not None and tb.active_kernel and ctx is not None:
-            try:
-                await ctx.interrupt_kernel(tb.active_kernel)
-            except Exception:
-                pass
+        if self._toolbox is not None:
+            await self._toolbox.interrupt_active()
         if self._run_task is not None and not self._run_task.done():
             self._run_task.cancel()
 

@@ -15,6 +15,7 @@ Frontend dev with HMR: `cd frontend && npm run dev` (proxies `/api` and `/ws` to
 ```bash
 .venv/bin/pytest                 # schema, scheduler on a real ipykernel, websocket sync
 node tests/e2e/smoke.mjs         # browser smoke (needs built frontend; uses preinstalled Playwright chromium)
+node tests/e2e/agent.mjs         # agent cell end to end with the scripted fake backend (no Claude needed)
 ```
 
 ## Module map
@@ -32,9 +33,34 @@ node tests/e2e/smoke.mjs         # browser smoke (needs built frontend; uses pre
 | `yupyter/config.py` | `~/.config/yupyter/config.toml`; `aliases`, `resolve_alias`. |
 | `yupyter/server/app.py` | `create_app(notebook_path, token, port=)`; protocol in `yupyter/server/README.md`. |
 | `yupyter/cli.py` | `yupyter [PATH] --port --ip --no-browser`. |
+| `yupyter/agent/context.py` | `render_context(doc, agent_cell_id)`: doc through the agent cell as prompt content blocks (text + images); cells below as one line each. Pure. |
+| `yupyter/agent/tools.py` | `Toolbox` (insert/edit/run/read/delete cell, set_kernel, list_kernels) on the live doc, plus `TOOL_SPECS`. Backend-agnostic. |
+| `yupyter/agent/executor.py` | `ClaudeAgentExecutor` (registered as `agent:claude`), `AgentStream` (throttled streaming output), re-run replace/keep, `SdkBackend` (Claude Agent SDK), `FakeBackend`. |
+| `frontend/src/outputs/agent.tsx` | renderer for `application/vnd.yupyter.agent+json` (events: `thinking`, `text`, `tool`). |
 | `frontend/src/doc.ts` | Yjs doc, `WebsocketProvider`, `listCells`, `insertCell`, `runCell`. |
 | `frontend/src/magic.ts` | `parsePrompt()` seam for `%%magic` handling. |
 | `frontend/src/outputs/` | one renderer file per mime family; dispatcher in `index.tsx`. |
 | `frontend/src/components/` | `App`, `Cell`, `Editor` (CodeMirror + y-codemirror.next), `PromptBar`. |
 
 Notes: pycrdt `transaction.origin()` returns `hash(origin)`, not the object. Clients must not write `exec`/`outputs`.
+
+## Agent cells
+
+`%%claude <prompt>` makes a cell with kernel `agent:claude`. Running it starts a fresh Claude Agent SDK
+session whose only tools are `Toolbox` (in-process MCP server); it uses your Claude Code login or
+`ANTHROPIC_API_KEY`. Optional `[agent]` config: `model`, `max_turns` (40), `timeout_s` (900).
+Doc meta: `agent_policy` = `auto`|`propose`, `agent_delete` = `own`|`any`, `rerun` = `replace`|`keep`
+(a cell-level `rerun` wins). Agent-made cells carry `author="claude"` and `created_by_run`; the agent
+cell's `exec.runs` lists its runs, which is what re-run "replace" deletes.
+
+Tests without a model: `YUPYTER_AGENT_BACKEND=fake:script.json` replays a script through the same tools:
+
+```json
+{"chunk": 6, "delay": 0.04, "steps": [
+  {"thinking": "..."},
+  {"tool": "insert_cell", "args": {"source": "print(1)", "kernel": "py"}, "save_as": "c"},
+  {"tool": "run_cell", "args": {"id": "$c"}},
+  {"text": "done"}]}
+```
+(`$agent` is the agent cell id; `{"hang": true}` blocks, for interrupt tests; `{"raise": "msg"}` fails the run.)
+In pytest, inject `ClaudeAgentExecutor(backend=...)` into `sched.registry._executors["agent:claude"]` (see `tests/agent_support.py`).

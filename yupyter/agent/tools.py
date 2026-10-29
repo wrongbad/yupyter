@@ -116,6 +116,15 @@ class Toolbox:
             )
         return name
 
+    async def interrupt_active(self) -> None:
+        """Interrupt the kernel of a run_cell in flight (once)."""
+        kernel, self.active_kernel = self.active_kernel, None
+        if kernel:
+            try:
+                await self.ctx.interrupt_kernel(kernel)
+            except Exception:
+                pass
+
     # -- tools ------------------------------------------------------------------
     async def insert_cell(
         self, source: str, kernel: str = "py", kind: str = "code", after_id: str | None = None
@@ -236,10 +245,7 @@ class Toolbox:
                 await asyncio.wait({task}, timeout=15)
         except asyncio.CancelledError:
             # the agent run itself was interrupted: stop the cell it started
-            try:
-                await asyncio.shield(self.ctx.interrupt_kernel(kernel))
-            except Exception:
-                pass
+            await self.interrupt_active()
             task.cancel()
             raise
         finally:
