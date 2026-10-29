@@ -1,10 +1,32 @@
-import { useState } from "preact/hooks";
+import { useEffect, useState } from "preact/hooks";
 import MarkdownIt from "markdown-it";
+import markdownItKatex from "@vscode/markdown-it-katex";
+import "katex/dist/katex.min.css";
+import * as Y from "yjs";
 import { CellView, deleteCell, interruptKernel, runCell } from "../doc";
 import { OutputList } from "../outputs";
 import { Editor } from "./Editor";
 
-const md = new MarkdownIt({ html: false, linkify: true });
+// CJS interop: the plugin may arrive as {default: fn}
+const katexPlugin: typeof markdownItKatex = (markdownItKatex as any).default ?? markdownItKatex;
+const md = new MarkdownIt({ html: false, linkify: true }).use(katexPlugin, { throwOnError: false });
+
+/** Rendered markdown that re-renders whenever the cell's Y.Text changes (local or remote). */
+function MarkdownView({ text, onClick }: { text: Y.Text; onClick: () => void }) {
+  const [, bump] = useState(0);
+  useEffect(() => {
+    const h = () => bump((n) => n + 1);
+    text.observe(h);
+    return () => text.unobserve(h);
+  }, [text]);
+  return (
+    <div
+      class="md-rendered"
+      onClick={onClick}
+      dangerouslySetInnerHTML={{ __html: md.render(text.toString() || "*empty*") }}
+    />
+  );
+}
 
 function RunState({ cell }: { cell: CellView }) {
   const s = cell.exec.state;
@@ -29,11 +51,7 @@ export function Cell({ cell }: { cell: CellView }) {
         {editing ? (
           <Editor text={cell.source} lang="markdown" autofocus onBlur={() => setEditing(false)} />
         ) : (
-          <div
-            class="md-rendered"
-            onClick={() => setEditing(true)}
-            dangerouslySetInnerHTML={{ __html: md.render(cell.source.toString() || "*empty*") }}
-          />
+          <MarkdownView text={cell.source} onClick={() => setEditing(true)} />
         )}
         <div class="cell-tools">
           <button onClick={() => deleteCell(cell.id)} title="Delete cell">×</button>
