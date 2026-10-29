@@ -3,7 +3,7 @@
 // never write `exec` or `outputs` (the server does).
 import * as Y from "yjs";
 import { WebsocketProvider } from "y-websocket";
-import { getUser } from "./user";
+import { getUser, userState } from "./user";
 
 export type Output = Record<string, any>;
 
@@ -42,12 +42,10 @@ export const provider = new WebsocketProvider(
 export const awareness = provider.awareness;
 
 const user = getUser();
-awareness.setLocalStateField("user", {
-  name: user.name,
-  color: user.color,
-  colorLight: user.color + "33",
-  id: user.id,
-});
+awareness.setLocalStateField("user", userState());
+
+/** Origin of local structural edits (insert/delete/move cell); the structural UndoManager tracks only this. */
+export const STRUCT_ORIGIN = "struct";
 
 export function listCells(): CellView[] {
   const out: CellView[] = [];
@@ -100,11 +98,16 @@ export function insertCell(opts: {
   kernel: string;
   source: string;
   afterId?: string | null;
+  beforeId?: string | null;
 }): string {
   const cells = listCells();
   let lo: string | null = null;
   let hi: string | null = null;
-  if (opts.afterId) {
+  if (opts.beforeId) {
+    const i = cells.findIndex((c) => c.id === opts.beforeId);
+    lo = cells[i - 1]?.order ?? null;
+    hi = cells[i]?.order ?? null;
+  } else if (opts.afterId) {
     const i = cells.findIndex((c) => c.id === opts.afterId);
     lo = cells[i]?.order ?? null;
     hi = cells[i + 1]?.order ?? null;
@@ -123,12 +126,12 @@ export function insertCell(opts: {
     c.set("exec", new Y.Map<any>([["state", "idle"], ["count", null]]));
     c.set("outputs", new Y.Array<Output>());
     ycells.set(id, c);
-  }, "local");
+  }, STRUCT_ORIGIN);
   return id;
 }
 
 export function deleteCell(id: string) {
-  ycells.delete(id);
+  ydoc.transact(() => ycells.delete(id), STRUCT_ORIGIN);
 }
 
 // --- RPC ---------------------------------------------------------------------
