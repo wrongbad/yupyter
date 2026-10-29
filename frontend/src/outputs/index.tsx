@@ -1,6 +1,7 @@
 // Output dispatcher. To add a renderer: create a file in this folder and add
 // its mime type to RICH_MIMES (richest first) and the switch below.
 import type { Output } from "../doc";
+import { AGENT_MIME, AgentOutput } from "./agent";
 import { ErrorOutput } from "./error";
 import { HtmlOutput } from "./html";
 import { ImageOutput } from "./image";
@@ -19,6 +20,7 @@ export function OutputView({ output }: { output: Output }) {
     case "display_data":
     case "execute_result": {
       const data = output.data ?? {};
+      if (AGENT_MIME in data) return <AgentOutput events={data[AGENT_MIME]} />;
       const mime = RICH_MIMES.find((m) => m in data);
       if (!mime) return null;
       const v = asText(data[mime]);

@@ -108,3 +108,13 @@ html, body { margin: 0; background: var(--bg); color: var(--fg); font-family: va
 .palette-list li.active { background: var(--panel); }
 .palette-list li.none { color: var(--muted); cursor: default; }
 .palette-list kbd { font-family: var(--mono); font-size: .7rem; color: var(--muted); }
+
+/* agent output */
+.agent-out { font-size: .9rem; }
+.agent-thinking { color: var(--muted); margin: .2rem 0; }
+.agent-thinking summary { cursor: pointer; font-size: .8rem; }
+.agent-thinking-text { white-space: pre-wrap; font-size: .85rem; font-style: italic; margin-top: .2rem; }
+.agent-text { margin: .3rem 0; }
+.agent-text p { margin: .3rem 0; }
+.agent-tool { color: var(--muted); font-family: var(--mono); font-size: .75rem; margin: .1rem 0; }
+.agent-tool-error { color: var(--err); }

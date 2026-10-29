@@ -225,6 +225,15 @@ def set_outputs(
             arr.append(o)
 
 
+def update_output(
+    doc: Doc, cell_id: str, index: int, output: Output, origin: Hashable | None = SERVER_ORIGIN
+) -> None:
+    """Replace the output at ``index`` in place (streaming displays that grow)."""
+    arr = _outputs(doc, cell_id)
+    with doc.transaction(origin=origin):
+        arr[index] = output
+
+
 def append_output(
     doc: Doc, cell_id: str, output: Output, origin: Hashable | None = SERVER_ORIGIN
 ) -> None:

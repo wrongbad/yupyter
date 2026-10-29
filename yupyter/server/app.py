@@ -15,6 +15,7 @@ from starlette.routing import Mount, Route, WebSocketRoute
 from starlette.staticfiles import StaticFiles
 from starlette.websockets import WebSocket
 
+from .. import agent as _agent  # noqa: F401  (registers agent:claude)
 from .. import config
 from ..doc.store import DocStore
 from ..scheduler import RunScheduler
