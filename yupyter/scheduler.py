@@ -139,6 +139,7 @@ class RunScheduler:
                 run_cell=lambda cell_id, **kw: self.run_cell(
                     job.path, cell_id, author=job.author, **kw
                 ),
+                interrupt_kernel=self.interrupt,
                 origin=origin,
             )
             first = True

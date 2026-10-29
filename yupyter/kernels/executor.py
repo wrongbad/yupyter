@@ -32,6 +32,8 @@ class RunContext:
     # Run another cell of this notebook through the scheduler and wait for its
     # outputs. Agent executors use this to implement their run_cell tool.
     run_cell: Callable[..., Awaitable[list[Output]]] = field(default=None)  # type: ignore
+    # Interrupt the named executor (kernel/agent) and drop its queued jobs.
+    interrupt_kernel: Callable[[str], Awaitable[None]] = field(default=None)  # type: ignore
     # Undo/provenance origin to use for doc writes made on behalf of this run.
     origin: str = ""
 
