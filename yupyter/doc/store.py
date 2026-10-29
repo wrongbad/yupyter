@@ -7,9 +7,14 @@ so the browser can use y-websocket's ``WebsocketProvider`` unchanged.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
+import os
+import shutil
+import tempfile
 from pathlib import Path
 from typing import Callable
+from urllib.parse import quote
 
 from pycrdt import (
     Awareness,
@@ -160,32 +165,67 @@ class DocStore:
     def __init__(self) -> None:
         self._docs: dict[Path, OpenDoc] = {}
         self._dirty: set[Path] = set()
+        self._last_saved: dict[Path, str] = {}
         self._save_task: asyncio.Task | None = None
 
-    # -- persistence hooks (markdown_io fills these in) --------------------
+    # -- persistence ------------------------------------------------------------
+    @staticmethod
+    def assets_dir(path: Path) -> Path:
+        """``<dir>/<name>.assets`` next to the notebook (``a.md`` -> ``a.assets``)."""
+        return path.with_name(path.stem + ".assets")
+
     def load(self, path: Path) -> Doc:
-        """Return a Doc for ``path``. Currently always an empty doc (stub)."""
+        """Return a Doc for ``path``: parsed from the file, or empty if absent."""
         from . import markdown_io
 
-        if path.exists() and path.read_text().strip():
-            try:
-                return markdown_io.load_markdown(path.read_text())
-            except NotImplementedError:
-                pass
+        if path.exists():
+            text = path.read_text(encoding="utf-8")
+            if text.strip():
+                return markdown_io.load_markdown(text, self.assets_dir(path))
         return schema.new_doc()
 
     def save(self, path: Path) -> None:
-        """Persist the open doc for ``path``. Currently a no-op (stub)."""
+        """Atomically write the open doc for ``path`` plus its assets dir."""
         from . import markdown_io
 
         od = self._docs.get(path)
         if od is None:
             return
+        assets = self.assets_dir(path)
+        # Render into a scratch dir first so a failure leaves the old files alone.
+        tmp_assets = assets.with_name(assets.name + ".tmp")
+        shutil.rmtree(tmp_assets, ignore_errors=True)
         try:
-            text = markdown_io.dump_markdown(od.doc, path.with_suffix(".assets"))
-        except NotImplementedError:
-            return
-        path.write_text(text)
+            text = markdown_io.dump_markdown(od.doc, tmp_assets)
+            # The text links to ``<assets.name>/...``; tmp dir only differs in name.
+            text = text.replace(quote(tmp_assets.name) + "/", quote(assets.name) + "/")
+            if tmp_assets.exists():
+                old = assets.with_name(assets.name + ".old")
+                shutil.rmtree(old, ignore_errors=True)
+                if assets.exists():
+                    os.replace(assets, old)
+                os.replace(tmp_assets, assets)
+                shutil.rmtree(old, ignore_errors=True)
+            else:
+                shutil.rmtree(assets, ignore_errors=True)  # no rich outputs: drop stale files
+            prev = self._last_saved.get(path)
+            if prev is None and path.exists():
+                prev = path.read_text(encoding="utf-8")
+            if prev == text:
+                self._last_saved[path] = text
+                return
+            fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=f".{path.name}.", suffix=".tmp")
+            try:
+                with os.fdopen(fd, "w", encoding="utf-8") as f:
+                    f.write(text)
+                os.replace(tmp, path)
+            except BaseException:
+                with contextlib.suppress(OSError):
+                    os.unlink(tmp)
+                raise
+            self._last_saved[path] = text
+        finally:
+            shutil.rmtree(tmp_assets, ignore_errors=True)
 
     # -- lifecycle ------------------------------------------------------------
     def open(self, path: str | Path) -> OpenDoc:
