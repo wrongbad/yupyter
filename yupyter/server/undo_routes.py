@@ -21,4 +21,11 @@ def undo_routes(store, notebook_path) -> list[Route]:
             return JSONResponse({"error": f"unknown run: {run_id}"}, status_code=404)
         return JSONResponse({"run_id": run_id, "undone": changed})
 
-    return [Route("/api/undo_run", api_undo_run, methods=["POST"])]
+    async def api_save(request: Request) -> JSONResponse:
+        store.save(notebook_path)
+        return JSONResponse({"ok": True})
+
+    return [
+        Route("/api/undo_run", api_undo_run, methods=["POST"]),
+        Route("/api/save", api_save, methods=["POST"]),
+    ]

@@ -14,7 +14,8 @@ Frontend dev with HMR: `cd frontend && npm run dev` (proxies `/api` and `/ws` to
 
 ```bash
 .venv/bin/pytest                 # schema, scheduler on a real ipykernel, websocket sync
-node tests/e2e/smoke.mjs         # browser smoke (needs built frontend; uses preinstalled Playwright chromium)
+node tests/e2e/smoke.mjs         # browser smoke
+node tests/e2e/multiplayer.mjs   # two users: presence, remote cursors, undo, move, palette (needs built frontend; uses preinstalled Playwright chromium)
 ```
 
 ## Module map
@@ -35,6 +36,15 @@ node tests/e2e/smoke.mjs         # browser smoke (needs built frontend; uses pre
 | `frontend/src/doc.ts` | Yjs doc, `WebsocketProvider`, `listCells`, `insertCell`, `runCell`. |
 | `frontend/src/magic.ts` | `parsePrompt()` seam for `%%magic` handling. |
 | `frontend/src/outputs/` | one renderer file per mime family; dispatcher in `index.tsx`. |
+| `yupyter/doc/presence.py` | `set_agent_presence(open_doc, name, cell_id\|None)` / `clear_agent_presence(open_doc, name)`: server-local awareness for agents (refresh <30s). |
+| `yupyter/doc/undo.py` | `track_run(doc, run_id)` before an agent run, write with `origin=run_origin(run_id)` (`"agent-run:<id>"`); `undo_run(doc, run_id)`. `POST /api/undo_run {run_id}` (`server/undo_routes.py`, also `POST /api/save`). Server `exec`/`outputs` writes use other origins and are never undone. |
+| `frontend/src/commands.ts` | `registerCommand({id, title, run, shortcut?})` adds to the Ctrl/Cmd+K palette. Built-ins in `builtinCommands.ts`. |
+| `frontend/src/presence/`, `undo.ts`, `ops.ts`, `keys.ts` | peers/avatars/selection, per-user structural undo (`STRUCT_ORIGIN` transactions only), cell ops, command-mode keys (Esc, j/k, a/b, dd, Alt+↑/↓, Enter, Shift+Enter). |
 | `frontend/src/components/` | `App`, `Cell`, `Editor` (CodeMirror + y-codemirror.next), `PromptBar`. |
 
 Notes: pycrdt `transaction.origin()` returns `hash(origin)`, not the object. Clients must not write `exec`/`outputs`.
+
+## Awareness shape
+
+Every participant (browser or agent) publishes `{user: {id, name, color, colorLight, kind: "human"|"agent"}, focus: {cellId: string|null}}`.
+`cursor` is owned by y-codemirror.next (`{anchor, head}`), do not write it. Agents (name `claude`, `kind: "agent"`) use `yupyter.doc.presence`; the UI shows them in the avatar row and as a left-edge marker on the focused cell. Frontend structural edits must use `ydoc.transact(fn, STRUCT_ORIGIN)` to be undoable.

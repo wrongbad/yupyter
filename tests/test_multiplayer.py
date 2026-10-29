@@ -52,10 +52,10 @@ def test_agent_presence(tmp_path):
     cid = presence.agent_client_id("claude")
     st = od.awareness.states[cid]
     assert st["user"]["kind"] == "agent" and st["user"]["name"] == "claude"
-    assert st["cursor"] == {"cellId": "abc123"}
+    assert st["focus"] == {"cellId": "abc123"}
     assert len(conn.sent) == 1 and conn.sent[0][0] == 1  # awareness message
     presence.set_agent_presence(od, "claude", None)
-    assert od.awareness.states[cid]["cursor"] == {"cellId": None}
+    assert od.awareness.states[cid]["focus"] == {"cellId": None}
     presence.clear_agent_presence(od, "claude")
     assert cid not in od.awareness.states
     assert len(conn.sent) == 3

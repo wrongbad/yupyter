@@ -3,7 +3,7 @@
 Awareness shape (same as browsers publish)::
 
     {"user": {"id", "name", "color", "colorLight", "kind": "human"|"agent"},
-     "cursor": {"cellId": str | None}}
+     "focus": {"cellId": str | None}}
 
 An agent gets a stable pseudo client id derived from its name, so repeated
 calls update one avatar. Browsers drop remote awareness states that are not
@@ -55,7 +55,7 @@ def set_agent_presence(
                 "colorLight": color + "33",
                 "kind": "agent",
             },
-            "cursor": {"cellId": cell_id},
+            "focus": {"cellId": cell_id},
         },
     )
 
