@@ -200,6 +200,8 @@ def _parse_front_matter(lines: list[str]) -> dict[str, Any] | None:
 def _fm_value(v: Any) -> str:
     if isinstance(v, bool):
         return "true" if v else "false"
+    if isinstance(v, float) and v.is_integer():  # Yjs numbers round-trip as floats
+        v = int(v)
     if isinstance(v, int):
         return str(v)
     s = str(v)
@@ -426,7 +428,7 @@ def _dump_front_matter(doc: Doc) -> str:
     aliases = m.pop("aliases", None)
     for k in sorted(m):
         v = m[k]
-        if isinstance(v, (str, int, bool)) and re.fullmatch(r"[A-Za-z_][\w-]*", k):
+        if isinstance(v, (str, int, float, bool)) and re.fullmatch(r"[A-Za-z_][\w-]*", k):
             out.append(f"{k}: {_fm_value(v)}")
     if isinstance(aliases, dict) and aliases:
         out.append("aliases:")

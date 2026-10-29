@@ -15,6 +15,8 @@ Frontend dev with HMR: `cd frontend && npm run dev` (proxies `/api` and `/ws` to
 ```bash
 .venv/bin/pytest                 # schema, scheduler on a real ipykernel, websocket sync
 node tests/e2e/smoke.mjs         # browser smoke (needs built frontend; uses preinstalled Playwright chromium)
+node tests/e2e/persist.mjs       # save on autosave/shutdown, reload from .md
+node tests/e2e/markdown_cells.mjs  # markdown cells: KaTeX, live remote re-render
 ```
 
 ## Module map
@@ -23,8 +25,8 @@ node tests/e2e/smoke.mjs         # browser smoke (needs built frontend; uses pre
 |---|---|
 | `yupyter/doc/schema.py` | pycrdt doc schema + helpers (`new_doc`, `insert_cell`, `delete_cell`, `edit_source`, `set_source`, `ordered_cells`, `set_outputs`/`append_output`/`clear_outputs`, `set_exec_state`, `set_kernel_status`). All writers take `origin=`. Server alone writes `exec`/`outputs`. |
 | `yupyter/doc/order.py` | fractional index keys (`between(a, b)`); mirrored in `frontend/src/doc.ts`. |
-| `yupyter/doc/store.py` | `DocStore` (`open(path)`, `load(path)`, `save(path)` hooks, debounced autosave) and `OpenDoc.serve(ws)` (y-websocket sync + awareness relay). |
-| `yupyter/doc/markdown_io.py` | `load_markdown(text) -> Doc`, `dump_markdown(doc, assets_dir) -> str`. Stubs (NotImplementedError); store tolerates that. |
+| `yupyter/doc/store.py` | `DocStore` (`open(path)`, `load(path)`, atomic `save(path)` incl. assets dir, debounced autosave, save on shutdown) and `OpenDoc.serve(ws)` (y-websocket sync + awareness relay). |
+| `yupyter/doc/markdown_io.py` | `load_markdown(text, assets_dir=None) -> Doc`, `dump_markdown(doc, assets_dir) -> str`. Fences = code cells (`py {#id author= run=}`), `output`/`error` fences attach via `for=id`, rich outputs live in `<name>.assets/` behind `<!-- yupyter:output for= mime= -->` markers; front matter holds `aliases`. |
 | `yupyter/kernels/executor.py` | `Executor` protocol, `RunContext`, `Output`. |
 | `yupyter/kernels/registry.py` | `ExecutorRegistry.resolve(name)`, `register_agent("claude", factory)` for `agent:*` names. |
 | `yupyter/kernels/jupyter_executor.py` | `JupyterExecutor` (lazy start, iopub -> outputs, interrupt, restart). |
