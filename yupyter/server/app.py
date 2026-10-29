@@ -18,6 +18,7 @@ from starlette.websockets import WebSocket
 from .. import config
 from ..doc.store import DocStore
 from ..scheduler import RunScheduler
+from .undo_routes import undo_routes
 
 STATIC_DIR = Path(__file__).resolve().parent.parent / "static"
 
@@ -138,6 +139,7 @@ def create_app(
         Route("/api/interrupt", api_interrupt, methods=["POST"]),
         Route("/api/info", api_info, methods=["GET"]),
         WebSocketRoute("/ws/{room}", ws_endpoint),
+        *undo_routes(store, notebook_path),
     ]
     if (STATIC_DIR / "index.html").exists():
         routes.append(Mount("/", StaticFiles(directory=STATIC_DIR, html=True), name="static"))
