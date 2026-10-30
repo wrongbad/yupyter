@@ -3,7 +3,7 @@ import MarkdownIt from "markdown-it";
 import markdownItKatex from "@vscode/markdown-it-katex";
 import "katex/dist/katex.min.css";
 import * as Y from "yjs";
-import { CellView, interruptKernel } from "../doc";
+import { CellView, clearOutputs, interruptKernel } from "../doc";
 import { deleteSelected, insertRelative, setCellType } from "../ops";
 import { runWithMagic } from "../magic";
 import { runAction } from "../undo";
@@ -11,6 +11,7 @@ import { kernelClass, kernelLabel, useKernels } from "../kernels";
 import { Menu } from "./Menu";
 import { OutputList } from "../outputs";
 import { Editor } from "./Editor";
+import { cellDragProps } from "../dnd";
 
 // CJS interop: the plugin may arrive as {default: fn}
 const katexPlugin: typeof markdownItKatex = (markdownItKatex as any).default ?? markdownItKatex;
@@ -103,7 +104,9 @@ function RunUndo({ cell }: { cell: CellView }) {
   );
 }
 
-function CellMenu({ id }: { id: string }) {
+function CellMenu({ cell }: { cell: CellView }) {
+  const id = cell.id;
+  const canClear = cell.kind === "code" && cell.outputs.length > 0 && cell.exec.state !== "running" && cell.exec.state !== "queued";
   return (
     <Menu
       title="Cell menu"
@@ -111,6 +114,7 @@ function CellMenu({ id }: { id: string }) {
       items={[
         { label: "Insert above", onSelect: () => void insertRelative("above", id) },
         { label: "Insert below", onSelect: () => void insertRelative("below", id) },
+        ...(canClear ? [{ label: "Clear outputs", onSelect: () => void clearOutputs(id) }] : []),
         { label: "Delete", danger: true, onSelect: () => deleteSelected(id) },
       ]}
     />
@@ -120,14 +124,22 @@ function CellMenu({ id }: { id: string }) {
 export function Cell({ cell }: { cell: CellView }) {
   const [editing, setEditing] = useState(false);
   const busy = cell.exec.state === "running" || cell.exec.state === "queued";
+  const drag = cellDragProps(cell.id);
 
   if (cell.kind === "markdown") {
     return (
       <section class="cell cell-md" data-cell-id={cell.id} data-run={cell.createdByRun ?? undefined}>
         {/* type label only while editing; preventDefault keeps the editor from blurring on menu clicks */}
-        <div class={editing ? "cell-head" : "cell-head floating"} onMouseDown={(e) => e.preventDefault()}>
+        <div
+          class={editing ? "cell-head" : "cell-head floating"}
+          {...drag}
+          onMouseDown={(e) => {
+            drag.onMouseDown(e);
+            if (!e.currentTarget.draggable) e.preventDefault();
+          }}
+        >
           {editing && <KernelMenu cell={cell} />}
-          <span class="cell-tools"><CellMenu id={cell.id} /></span>
+          <span class="cell-tools"><CellMenu cell={cell} /></span>
         </div>
         {editing ? (
           <Editor
@@ -146,7 +158,7 @@ export function Cell({ cell }: { cell: CellView }) {
   }
   return (
     <section class={`cell cell-code state-${cell.exec.state}`} data-cell-id={cell.id} data-run={cell.createdByRun ?? undefined}>
-      <div class="cell-head">
+      <div class="cell-head" {...drag}>
         <RunState cell={cell} />
         <KernelMenu cell={cell} />
         <span class="cell-tools">
@@ -155,7 +167,7 @@ export function Cell({ cell }: { cell: CellView }) {
           ) : (
             <button onClick={() => runWithMagic(cell.id)} title="Run (Shift+Enter)">▶</button>
           )}
-          <CellMenu id={cell.id} />
+          <CellMenu cell={cell} />
         </span>
       </div>
       <Editor

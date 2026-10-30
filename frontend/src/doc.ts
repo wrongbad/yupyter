@@ -174,6 +174,7 @@ export async function post(path: string, body: unknown) {
 export const runCell = (cellId: string, runId?: string) =>
   post(apiUrl("/api/run"), { cell_id: cellId, author: user.id, run_id: runId });
 export const interruptKernel = (kernel: string) => post(apiUrl("/api/interrupt"), { kernel });
+export const clearOutputs = (cellId: string) => post(apiUrl("/api/clear"), { cell_id: cellId });
 
 /** Subscribe to any structural/exec/output change (but not keystrokes in cell sources). */
 export function onCellsChange(cb: () => void): () => void {

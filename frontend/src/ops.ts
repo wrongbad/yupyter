@@ -84,6 +84,19 @@ export function moveCell(d: -1 | 1) {
   );
 }
 
+/** Move cell `id` to just before `before` (null = end); a no-op if it's already there. */
+export function moveCellTo(id: string, before: string | null) {
+  const cs = listCells();
+  const i = cs.findIndex((c) => c.id === id);
+  if (i < 0 || before === id) return;
+  const rest = cs.filter((c) => c.id !== id);
+  const j = before === null ? rest.length : rest.findIndex((c) => c.id === before);
+  if (j < 0 || (cs[i + 1]?.id ?? null) === before) return;
+  const order = orderBetween(rest[j - 1]?.order ?? null, rest[j]?.order ?? null);
+  ydoc.transact(() => cs[i].ymap.set("order", order), STRUCT_ORIGIN);
+  select(id);
+}
+
 export function runSelected() {
   const cur = getSelected();
   if (cur) runWithMagic(cur);

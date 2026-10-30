@@ -22,6 +22,7 @@ from starlette.websockets import WebSocket
 from .. import agent as _agent  # noqa: F401  (registers agent:claude)
 from .. import config
 from ..agent.tools import installed_kernelspecs
+from ..doc import schema
 from ..doc.store import DocStore
 from ..kernels.registry import agent_names
 from ..scheduler import RunScheduler
@@ -179,6 +180,20 @@ def create_app(
         await scheduler.interrupt(kernel, nb)
         return JSONResponse({"ok": True})
 
+    async def api_clear(request: Request) -> JSONResponse:
+        """Clear one cell's outputs (clients never write outputs themselves)."""
+        nb = notebook(request)
+        cell_id = (await request.json()).get("cell_id")
+        if not cell_id:
+            return JSONResponse({"error": "cell_id required"}, status_code=400)
+        doc = store.get_doc(nb)
+        if not schema.has_cell(doc, cell_id):
+            return JSONResponse({"error": f"no such cell: {cell_id}"}, status_code=404)
+        if schema.get_cell(doc, cell_id)["exec"].get("state") in ("running", "queued"):
+            return JSONResponse({"error": "cell is running"}, status_code=409)
+        schema.clear_outputs(doc, cell_id)
+        return JSONResponse({"ok": True})
+
     async def api_info_global(request: Request) -> JSONResponse:
         return JSONResponse(
             {
@@ -296,6 +311,7 @@ def create_app(
     routes = [
         Route("/api/run/{path:path}", api_run, methods=["POST"]),
         Route("/api/interrupt/{path:path}", api_interrupt, methods=["POST"]),
+        Route("/api/clear/{path:path}", api_clear, methods=["POST"]),
         Route("/api/info", api_info_global, methods=["GET"]),
         Route("/api/info/{path:path}", api_info, methods=["GET"]),
         Route("/api/resolve/{path:path}", api_resolve, methods=["POST"]),

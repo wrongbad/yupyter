@@ -27,6 +27,10 @@ File format::
 * ``output`` / ``error`` fences attach to the cell named by ``for=``.
 * Rich outputs are files in the assets dir, referenced from a marker comment
   plus a link line; the pair is consumed on load (never a markdown cell).
+* Agent output is an ``output {for=id type=agent}`` fence, one event per
+  entry: ``- tool line``, ``! failed tool line``, ``[thinking] ...``,
+  ``[answer] ...``. An entry starts at column 0; its further lines are
+  indented two spaces, so answer text can't be mistaken for a new entry.
 """
 from __future__ import annotations
 
@@ -62,6 +66,49 @@ _RICH = [
     ("application/json", "json", False),
 ]
 _RICH_BY_MIME = {m: (ext, binary) for m, ext, binary in _RICH}
+
+AGENT_MIME = "application/vnd.yupyter.agent+json"
+
+
+def _indent_rest(text: str) -> str:
+    first, *rest = text.split("\n")
+    return "\n".join([first, *(f"  {l}" if l else "" for l in rest)])  # blank lines stay empty
+
+
+def agent_text(events: list[dict[str, Any]]) -> str:
+    """Agent events as text (the text/plain fallback and the .md body); inverse of ``parse_agent_text``."""
+    out = []
+    for e in events:
+        t = e.get("type")
+        if t == "thinking":
+            out.append("[thinking] " + _indent_rest(e.get("text", "")))
+        elif t == "text":
+            out.append("[answer] " + _indent_rest(e.get("text", "")))
+        else:
+            mark = "!" if e.get("status") == "error" else "-"
+            out.append(f"{mark} " + _indent_rest(e.get("summary", "")))
+    return "\n".join(out)
+
+
+def parse_agent_text(body: str) -> list[dict[str, Any]]:
+    """Events from ``agent_text`` output. Unmarked column-0 lines are answer text (hand edits)."""
+    events: list[dict[str, Any]] = []
+    for line in body.split("\n"):
+        if events and (line.startswith("  ") or not line):
+            key = "summary" if events[-1]["type"] == "tool" else "text"
+            events[-1][key] += "\n" + line[2:]
+        elif line.startswith("[thinking] ") or line == "[thinking]":
+            events.append({"type": "thinking", "text": line[11:], "done": True})
+        elif line.startswith("[answer] ") or line == "[answer]":
+            events.append({"type": "text", "text": line[9:]})
+        elif line.startswith(("- ", "! ")):
+            events.append({"type": "tool", "name": "", "summary": line[2:],
+                           "status": "error" if line[0] == "!" else "ok"})
+        elif events and events[-1]["type"] == "text":
+            events[-1]["text"] += "\n" + line
+        else:
+            events.append({"type": "text", "text": line})
+    return events
 
 
 # ---------------------------------------------------------------------------
@@ -392,6 +439,9 @@ def _build_output(it: dict[str, Any], assets_dir: Path | None) -> dict[str, Any]
     if it["t"] == "output":
         body = it["body"]
         typ = attrs.get("type", "")
+        if typ == "agent":
+            events = parse_agent_text(body)
+            return {"output_type": "display_data", "data": {AGENT_MIME: events, "text/plain": body}, "metadata": {}}
         if typ in ("result", "display"):
             return {
                 "output_type": "execute_result" if typ == "result" else "display_data",
@@ -501,6 +551,9 @@ def _dump_output(cid: str, idx: int, o: dict[str, Any], assets_dir: Path) -> str
         return _out_block(f"error {{for={cid}}}", body.rstrip("\n"))
     if typ in ("execute_result", "display_data"):
         data = o.get("data") or {}
+        events = data.get(AGENT_MIME)
+        if isinstance(events, list) and events:
+            return _out_block(f"output {{for={cid} type=agent}}", agent_text(events))
         rich = _best_rich(data)
         if rich is not None:
             mime, ext, binary = rich

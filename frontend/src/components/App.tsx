@@ -10,6 +10,7 @@ import { CellFrame } from "../presence/CellFrame";
 import { installKeys } from "../keys";
 import "../builtinCommands";
 import { addCell } from "../ops";
+import { useCellDrop } from "../dnd";
 import { getSelected, select } from "../presence/selection";
 
 function useCells() {
@@ -26,6 +27,7 @@ export function App() {
   const cells = useCells();
   const synced = useSynced();
   const drawer = useDrawerOpen();
+  const drop = useCellDrop();
   useEffect(() => installKeys(), []);
   useEffect(() => {
     const sel = getSelected();
@@ -40,7 +42,8 @@ export function App() {
       {notebookPath === null ? (
         <main class="column"><p class="empty">Pick a notebook from the file list, or create one.</p></main>
       ) : (
-      <main class="column">
+      <main class="column cells" {...drop.props}>
+        {drop.slotTop !== null && <div class="drop-line" style={{ top: `${drop.slotTop}px` }} />}
         {cells.map((c) => (
           <CellFrame key={c.id} id={c.id}>
             <Cell cell={c} />

@@ -19,7 +19,7 @@ from pathlib import Path
 from typing import Any, AsyncIterator, Protocol
 
 from .. import config
-from ..doc import schema, undo
+from ..doc import markdown_io, schema, undo
 from ..kernels.executor import Output, RunContext
 from . import context as ctxmod
 from .tools import AGENT_AUTHOR, TOOL_NAMES, TOOL_SPECS, ToolError, Toolbox
@@ -120,15 +120,7 @@ class AgentStream:
 
     # -- doc mirroring --------------------------------------------------------
     def _fallback_text(self) -> str:
-        out = []
-        for e in self.events:
-            if e["type"] == "thinking":
-                out.append(f"[thinking] {e['text']}")
-            elif e["type"] == "text":
-                out.append(e["text"])
-            else:
-                out.append(f"- {e['summary']}")
-        return "\n".join(out)
+        return markdown_io.agent_text(self.events)
 
     def flush(self) -> None:
         if not self._dirty or not schema.has_cell(self.doc, self.cell_id):

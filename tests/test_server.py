@@ -428,3 +428,18 @@ async def test_kernel_per_notebook(tmp_path):
         assert not s.kernel_running(a) and s.kernel_running((tmp_path / "a2.md").resolve())
     finally:
         await s.shutdown()
+
+
+def test_clear_outputs_route(client):
+    store = client.app.app.state.store
+    d = store.get_doc(client.root / "nb.md")
+    schema.insert_cell(d, None, "code", "python3", "1+1", "bob", cell_id="c1")
+    schema.append_output(d, "c1", {"output_type": "stream", "name": "stdout", "text": "2\n"})
+    assert client.post("/api/clear/nb.md", json={}).status_code == 400
+    assert client.post("/api/clear/nb.md", json={"cell_id": "nope"}).status_code == 404
+    schema.set_exec_state(d, "c1", "running")
+    assert client.post("/api/clear/nb.md", json={"cell_id": "c1"}).status_code == 409
+    assert schema.get_outputs(d, "c1")
+    schema.set_exec_state(d, "c1", "done")
+    assert client.post("/api/clear/nb.md", json={"cell_id": "c1"}).json() == {"ok": True}
+    assert schema.get_outputs(d, "c1") == []

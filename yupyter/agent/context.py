@@ -12,9 +12,9 @@ from typing import Any
 
 from pycrdt import Doc
 
-from ..doc import schema
+from ..doc import markdown_io, schema
 
-AGENT_MIME = "application/vnd.yupyter.agent+json"
+AGENT_MIME = markdown_io.AGENT_MIME
 IMAGE_MIMES = ("image/png", "image/jpeg")
 _ANSI = re.compile(r"\x1b\[[0-9;?]*[A-Za-z]")
 

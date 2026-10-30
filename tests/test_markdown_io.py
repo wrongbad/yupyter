@@ -167,3 +167,35 @@ def test_store_save_load_atomic_and_stale_assets(tmp_path):
 
     d = DocStore().open(p).doc
     assert schema.get_source(d, "q1") == "1"
+
+
+AGENT_MIME = "application/vnd.yupyter.agent+json"
+
+
+def test_agent_trace_roundtrips_inline(tmp_path):
+    events = [
+        {"type": "tool", "name": "insert_cell", "summary": "inserted cell 191f44 (python3)", "status": "ok"},
+        {"type": "tool", "name": "agent", "summary": "run_cell failed: no such cell: '0'", "status": "error"},
+        {"type": "thinking", "text": "Since plotnine is missing,\n\nI'll install it.", "done": True},
+        {"type": "text", "text": "Done:\n- straight line\n[thinking] not a marker\n! nor this\n\nend"},
+    ]
+    d = schema.new_doc()
+    schema.insert_cell(d, None, "code", "agent:claude", "graph y=2+x", "bob", cell_id="c1")
+    schema.append_output(d, "c1", {"output_type": "display_data", "metadata": {},
+                                   "data": {AGENT_MIME: events, "text/plain": "x"}})
+    text = dump_markdown(d, tmp_path / "nb.assets")
+    assert "```output {for=c1 type=agent}" in text
+    assert "! run_cell failed" in text and "  - straight line" in text
+    assert not any(l.endswith(" ") for l in text.split("\n"))  # editors strip trailing spaces
+    assert not (tmp_path / "nb.assets").exists()  # nothing out of line
+    out = schema.get_outputs(load_markdown(text, tmp_path / "nb.assets"), "c1")[0]
+    got = [{k: v for k, v in e.items() if k != "name"} for e in out["data"][AGENT_MIME]]
+    assert got == [{k: v for k, v in e.items() if k != "name"} for e in events]
+    assert dump_markdown(load_markdown(text, tmp_path / "nb.assets"), tmp_path / "nb.assets") == text
+
+
+def test_agent_trace_hand_edits_degrade_to_answer_text():
+    from yupyter.doc.markdown_io import parse_agent_text
+    evs = parse_agent_text("- ran a ✓\nsomeone typed this\n  and this\n[answer] hi")
+    assert [e["type"] for e in evs] == ["tool", "text", "text"]
+    assert evs[1]["text"] == "someone typed this\nand this"
