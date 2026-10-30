@@ -38,7 +38,7 @@ class JupyterExecutor:
                 # ip is the socket path prefix; it must be unique per kernel (the
                 # default "kernel-ipc" lands in the cwd and is shared by all kernels).
                 rt = jupyter_runtime_dir()
-                os.makedirs(rt, exist_ok=True)
+                os.makedirs(rt, mode=0o700, exist_ok=True)
                 ip = os.path.join(rt, f"yupyter-{uuid.uuid4().hex[:12]}")
                 km = AsyncKernelManager(kernel_name=self.kernel_name, transport="ipc", ip=ip)
             await km.start_kernel()
