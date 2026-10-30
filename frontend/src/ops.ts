@@ -1,5 +1,6 @@
 // Structural cell operations used by shortcuts and the palette.
-import { STRUCT_ORIGIN, insertCell, deleteCell, listCells, orderBetween, runCell, ydoc } from "./doc";
+import { STRUCT_ORIGIN, CellView, insertCell, deleteCell, listCells, orderBetween, ydoc } from "./doc";
+import { runWithMagic } from "./magic";
 import { getDefaultKernel } from "./user";
 import { getSelected, select } from "./presence/selection";
 
@@ -32,8 +33,8 @@ export function moveSelection(d: number) {
   document.querySelector(`[data-cell-id="${next.id}"]`)?.scrollIntoView({ block: "nearest" });
 }
 
-export function insertRelative(where: "above" | "below") {
-  const cur = getSelected();
+export function insertRelative(where: "above" | "below", target?: string) {
+  const cur = target ?? getSelected();
   const opts = { kernel: getDefaultKernel(), source: "" };
   const id = insertCell(
     cur ? (where === "above" ? { ...opts, beforeId: cur } : { ...opts, afterId: cur }) : opts,
@@ -43,8 +44,23 @@ export function insertRelative(where: "above" | "below") {
   return id;
 }
 
-export function deleteSelected() {
-  const cur = getSelected();
+export function addCell() {
+  const id = insertCell({ kernel: getDefaultKernel(), source: "" });
+  select(id);
+  focusCellEditor(id);
+  return id;
+}
+
+/** Switch a cell's type: "markdown", or a kernel name (which makes it a code cell). */
+export function setCellType(cell: CellView, type: string) {
+  ydoc.transact(() => {
+    if (type === "markdown") cell.ymap.set("kind", "markdown");
+    else (cell.ymap.set("kind", "code"), cell.ymap.set("kernel", type));
+  }, STRUCT_ORIGIN);
+}
+
+export function deleteSelected(id?: string) {
+  const cur = id ?? getSelected();
   if (!cur) return;
   const next = neighbour(cur, 1) ?? neighbour(cur, -1);
   deleteCell(cur);
@@ -70,11 +86,11 @@ export function moveCell(d: -1 | 1) {
 
 export function runSelected() {
   const cur = getSelected();
-  if (cur) runCell(cur);
+  if (cur) runWithMagic(cur);
 }
 
 export function runAll() {
-  for (const c of listCells()) if (c.kind === "code") runCell(c.id);
+  for (const c of listCells()) if (c.kind === "code") runWithMagic(c.id);
 }
 
 export function isEditable(t: EventTarget | null): boolean {

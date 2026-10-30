@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from .doc import schema
+from .doc import schema, undo
 from .doc.store import DocStore
 from .kernels.executor import Output, RunContext
 from .kernels.registry import ExecutorRegistry
@@ -31,10 +31,12 @@ class RunScheduler:
     def __init__(self, store: DocStore, registry: ExecutorRegistry | None = None) -> None:
         self.store = store
         self.registry = registry or ExecutorRegistry()
-        self._queues: dict[str, asyncio.Queue[_Job]] = {}
-        self._workers: dict[str, asyncio.Task] = {}
-        self._counts: dict[str, int] = {}
-        self._current: dict[str, _Job | None] = {}
+        # One FIFO queue + worker per (notebook path, executor name): a notebook
+        # has its own kernel, like Jupyter.
+        self._queues: dict[tuple[Path, str], asyncio.Queue[_Job]] = {}
+        self._workers: dict[tuple[Path, str], asyncio.Task] = {}
+        self._counts: dict[tuple[Path, str], int] = {}
+        self._current: dict[tuple[Path, str], _Job | None] = {}
 
     # -- public API ---------------------------------------------------------
     async def run_cell(
@@ -65,19 +67,39 @@ class RunScheduler:
         name = self.registry.normalize(cell.get("kernel") or "python3")
         job = _Job(od.path, cell_id, run_id or secrets.token_hex(4), author, loop.create_future())
         schema.set_exec_state(doc, cell_id, "queued", run_id=job.run_id)
-        self._ensure_worker(name).put_nowait(job)
+        self._ensure_worker((od.path, name)).put_nowait(job)
         return await job.future
 
     async def interrupt(self, kernel: str, path: str | Path | None = None) -> None:
         """Interrupt the running cell on a kernel and drop its queued jobs."""
         name = self.registry.normalize(kernel)
-        q = self._queues.get(name)
-        if q is not None:
-            for job in list(q._queue):  # type: ignore[attr-defined]
-                job.skip = True
-        ex = self.registry._executors.get(name)
-        if ex is not None:
+        p = Path(path).resolve() if path is not None else None
+        for (qp, qn), q in self._queues.items():
+            if qn == name and (p is None or qp == p):
+                for job in list(q._queue):  # type: ignore[attr-defined]
+                    job.skip = True
+        for ex in self.registry.find(name, p):
             await ex.interrupt()
+
+    def busy(self, path: Path) -> bool:
+        """True if the notebook has a queued or running job."""
+        return any(
+            (qp == path and (not q.empty() or self._current.get((qp, qn)) is not None))
+            for (qp, qn), q in self._queues.items()
+        )
+
+    def kernel_running(self, path: Path) -> bool:
+        return self.registry.running(path)
+
+    def rename(self, old: Path, new: Path) -> None:
+        """Follow a notebook rename (call only when not ``busy``): the kernel moves with it."""
+        for key in [k for k in self._queues if k[0] == old]:
+            self._workers.pop(key).cancel()
+            del self._queues[key]
+            self._current.pop(key, None)
+            if key in self._counts:
+                self._counts[(new, key[1])] = self._counts.pop(key)
+        self.registry.rename(old, new)
 
     async def shutdown(self) -> None:
         for t in self._workers.values():
@@ -85,19 +107,19 @@ class RunScheduler:
         await self.registry.shutdown()
 
     # -- internals ------------------------------------------------------------
-    def _ensure_worker(self, name: str) -> "asyncio.Queue[_Job]":
-        if name not in self._queues:
-            self._queues[name] = asyncio.Queue()
-            self._workers[name] = asyncio.create_task(self._worker(name))
-        return self._queues[name]
+    def _ensure_worker(self, key: tuple[Path, str]) -> "asyncio.Queue[_Job]":
+        if key not in self._queues:
+            self._queues[key] = asyncio.Queue()
+            self._workers[key] = asyncio.create_task(self._worker(key))
+        return self._queues[key]
 
-    async def _worker(self, name: str) -> None:
-        q = self._queues[name]
+    async def _worker(self, key: tuple[Path, str]) -> None:
+        q = self._queues[key]
         while True:
             job = await q.get()
-            self._current[name] = job
+            self._current[key] = job
             try:
-                outs = await self._run_job(name, job)
+                outs = await self._run_job(key, job)
                 if not job.future.done():
                     job.future.set_result(outs)
             except asyncio.CancelledError:
@@ -107,9 +129,10 @@ class RunScheduler:
                 if not job.future.done():
                     job.future.set_exception(e)
             finally:
-                self._current[name] = None
+                self._current[key] = None
 
-    async def _run_job(self, name: str, job: _Job) -> list[Output]:
+    async def _run_job(self, key: tuple[Path, str], job: _Job) -> list[Output]:
+        name = key[1]
         doc = self.store.open(job.path).doc
         cid = job.cell_id
         if job.skip or not schema.has_cell(doc, cid):
@@ -117,13 +140,13 @@ class RunScheduler:
                 schema.set_exec_state(doc, cid, "idle")
             return []
         source = schema.get_source(doc, cid)
-        count = self._counts.get(name, 0) + 1
-        self._counts[name] = count
-        origin = f"run:{job.run_id}"
+        count = self._counts.get(key, 0) + 1
+        self._counts[key] = count
+        origin = undo.run_origin(job.run_id)
         outputs: list[Output] = []
         failed = False
         try:
-            executor = self.registry.resolve(name)
+            executor = self.registry.resolve(name, job.path)
             starting = getattr(executor, "is_started", True) is False
             schema.set_kernel_status(doc, name, "starting" if starting else "busy")
             schema.clear_outputs(doc, cid)
@@ -139,7 +162,7 @@ class RunScheduler:
                 run_cell=lambda cell_id, **kw: self.run_cell(
                     job.path, cell_id, author=job.author, **kw
                 ),
-                interrupt_kernel=self.interrupt,
+                interrupt_kernel=lambda k: self.interrupt(k, job.path),
                 origin=origin,
             )
             first = True
@@ -173,5 +196,5 @@ class RunScheduler:
         return outputs
 
     def status(self) -> dict[str, Any]:
-        return {n: {"queued": q.qsize(), "running": self._current.get(n) is not None}
-                for n, q in self._queues.items()}
+        return {f"{p}:{n}": {"queued": q.qsize(), "running": self._current.get((p, n)) is not None}
+                for (p, n), q in self._queues.items()}

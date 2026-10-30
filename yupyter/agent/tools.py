@@ -68,6 +68,8 @@ class Toolbox:
         self.anchor = anchor or ctx.cell_id  # new cells go after this one
         self.stream = stream
         self.created: list[str] = []
+        self.edited: set[str] = set()  # pre-existing or own cells changed (for the run summary)
+        self.deleted_old = 0  # cells from before this run that it deleted
         self.active_kernel: str | None = None  # kernel of a run_cell in flight
         self.on_anchor: Callable[[str], None] | None = None  # presence hook
         self.limits = ctxmod.Limits()
@@ -158,6 +160,7 @@ class Toolbox:
             schema.edit_source(self.doc, id, old, new, origin=self.ctx.origin)
         except ValueError as e:
             raise ToolError(str(e)) from None
+        self.edited.add(id)
         self._event("edit_cell", f"edited cell {id}")
         return ToolResult(f"edited cell {id}", data={"id": id})
 
@@ -187,6 +190,8 @@ class Toolbox:
                 f"cell {id} was not created by this run; only cells you created can be deleted"
             )
         schema.delete_cell(self.doc, id, origin=self.ctx.origin)
+        if snap["created_by_run"] != self.ctx.run_id:
+            self.deleted_old += 1
         if self.anchor == id:
             self.anchor = self.ctx.cell_id
         self._event("delete_cell", f"deleted cell {id}")
@@ -198,6 +203,7 @@ class Toolbox:
         cell = schema.get_cell(self.doc, id)
         with self.doc.transaction(origin=self.ctx.origin):
             cell["kernel"] = resolved
+        self.edited.add(id)
         self._event("set_kernel", f"cell {id} kernel -> {kernel}")
         return ToolResult(f"cell {id} now uses kernel {kernel} ({resolved})")
 

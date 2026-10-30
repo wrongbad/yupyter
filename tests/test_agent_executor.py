@@ -13,7 +13,7 @@ from yupyter.agent.executor import (
     SdkBackend,
     friendly_error,
 )
-from yupyter.doc import schema
+from yupyter.doc import schema, undo
 
 from agent_support import add_agent_cell, nb, use_backend  # noqa: F401
 
@@ -325,3 +325,30 @@ def test_friendly_error_variants():
     assert "log in" in friendly_error("Not logged in")
     assert "not found" in friendly_error(Exception("Claude Code not found: /x")).lower()
     assert friendly_error(ValueError("weird")) == "weird"
+
+
+async def test_agent_run_is_undoable_redoable_with_shared_flag_and_summary(nb):
+    store, sched, path, doc = nb
+    human = schema.insert_cell(doc, None, "code", "python3", "x = 1", "me")
+    ag = add_agent_cell(doc, "go", after=human)
+    use_backend(sched, FakeBackend([
+        {"tool": "insert_cell", "args": {"source": "a"}, "save_as": "a"},
+        {"tool": "insert_cell", "args": {"source": "b"}},
+        {"tool": "edit_cell", "args": {"id": human, "old": "1", "new": "2"}},
+    ]))
+    await sched.run_cell(path, ag)
+    ex = schema.cell_snapshot(doc, ag)["exec"]
+    run = ex["runId"]
+    assert ex["summary"] == {"inserted": 2, "edited": 1, "deleted": 0} and ex["undone"] is False
+    assert len(schema.ordered_ids(doc)) == 4
+
+    assert undo.undo_run(doc, run) is True
+    assert schema.ordered_ids(doc) == [human, ag]
+    assert schema.get_source(doc, human) == "x = 1"
+    ex = schema.cell_snapshot(doc, ag)["exec"]
+    assert ex["undone"] is True and ex["state"] == "done" and ex["summary"]["inserted"] == 2  # not reverted
+
+    assert undo.redo_run(doc, run) is True
+    assert len(schema.ordered_ids(doc)) == 4 and schema.get_source(doc, human) == "x = 2"
+    assert schema.cell_snapshot(doc, ag)["exec"]["undone"] is False
+    assert undo.redo_run(doc, run) is False

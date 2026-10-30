@@ -32,6 +32,14 @@ async function stop(proc) {
   await new Promise((r) => proc.on("exit", r));
 }
 
+// click "+ New cell", type into the focused editor, run with Shift+Enter
+async function runNew(page, src) {
+  await page.click(".new-cell");
+  await page.waitForFunction(() => document.activeElement?.classList.contains("cm-content"));
+  await page.keyboard.type(src);
+  await page.keyboard.press("Shift+Enter");
+}
+
 const exe = process.env.PW_CHROMIUM || (fs.existsSync("/opt/pw-browsers/chromium") ? "/opt/pw-browsers/chromium" : undefined);
 const browser = await chromium.launch({ executablePath: exe, args: ["--no-sandbox"] });
 let failed = false;
@@ -42,8 +50,7 @@ try {
   page.on("pageerror", (e) => console.log("pageerror:", e.message));
   await page.goto(s.url);
   await page.waitForFunction(() => document.querySelector(".app")?.dataset.synced === "true");
-  await page.fill("#prompt", "2 + 2");
-  await page.press("#prompt", "Enter");
+  await runNew(page, "2 + 2");
   await page.locator(".cell-code .out-text").first().waitFor({ timeout: 60000 });
 
   // wait for the debounced autosave to land the output on disk

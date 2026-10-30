@@ -19,7 +19,7 @@ from pathlib import Path
 from typing import Any, AsyncIterator, Protocol
 
 from .. import config
-from ..doc import schema
+from ..doc import schema, undo
 from ..kernels.executor import Output, RunContext
 from . import context as ctxmod
 from .tools import AGENT_AUTHOR, TOOL_NAMES, TOOL_SPECS, ToolError, Toolbox
@@ -208,7 +208,24 @@ def prepare_rerun(doc, cell_id: str, run_id: str, origin: str) -> str | None:
     ex = schema.get_cell(doc, cell_id)["exec"]
     with doc.transaction(origin=schema.SERVER_ORIGIN):
         ex["runs"] = runs
+        ex["undone"] = False
+        ex["summary"] = None
     return anchor
+
+
+def write_summary(doc, cell_id: str, tb: Toolbox, replaced: int = 0) -> None:
+    """Record what the run changed (``exec.summary``) for the undo button. ``replaced`` = earlier-run cells removed."""
+    if not schema.has_cell(doc, cell_id):
+        return
+    alive = lambda cid: schema.has_cell(doc, cid)  # noqa: E731
+    summary = {
+        "inserted": sum(1 for c in tb.created if alive(c)),
+        "edited": sum(1 for c in tb.edited if c not in tb.created and alive(c)),
+        "deleted": tb.deleted_old + replaced,
+    }
+    ex = schema.get_cell(doc, cell_id)["exec"]
+    with doc.transaction(origin=schema.SERVER_ORIGIN):
+        ex["summary"] = summary
 
 
 # ---------------------------------------------------------------------------
@@ -509,8 +526,13 @@ class ClaudeAgentExecutor:
         self._interrupted = False
         stream = AgentStream(doc, cell_id)
         error: AgentError | None = None
+        toolbox: Toolbox | None = None
+        replaced = 0
         try:
+            undo.track_run(doc, ctx.run_id)  # before the first write, so the whole run is one step
+            before = set(schema.ordered_ids(doc))
             anchor = prepare_rerun(doc, cell_id, ctx.run_id, ctx.origin)
+            replaced = len(before - set(schema.ordered_ids(doc)))
             toolbox = Toolbox(ctx, anchor=anchor, stream=stream)
             toolbox.on_anchor = lambda cid: _presence(ctx, cid)
             self._toolbox = toolbox
@@ -557,6 +579,8 @@ class ClaudeAgentExecutor:
             self._toolbox = None
             await stream.close()
             _presence(ctx, None)
+            if toolbox is not None:
+                write_summary(doc, cell_id, toolbox, replaced)
         if error is not None:
             if isinstance(error, _Interrupted):
                 yield {"output_type": "error", "ename": "KeyboardInterrupt",

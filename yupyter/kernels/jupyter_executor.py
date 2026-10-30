@@ -3,9 +3,12 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
+import uuid
 from typing import AsyncIterator
 
 from jupyter_client.manager import AsyncKernelManager
+from jupyter_core.paths import jupyter_runtime_dir
 
 from .executor import Output, RunContext
 
@@ -27,7 +30,17 @@ class JupyterExecutor:
         async with self._start_lock:
             if self.is_started:
                 return
-            km = AsyncKernelManager(kernel_name=self.kernel_name)
+            # Unix sockets instead of localhost TCP: no open ports, and silences
+            # ipykernel's "running over TCP without encryption" warning.
+            if os.name == "nt":
+                km = AsyncKernelManager(kernel_name=self.kernel_name)
+            else:
+                # ip is the socket path prefix; it must be unique per kernel (the
+                # default "kernel-ipc" lands in the cwd and is shared by all kernels).
+                rt = jupyter_runtime_dir()
+                os.makedirs(rt, exist_ok=True)
+                ip = os.path.join(rt, f"yupyter-{uuid.uuid4().hex[:12]}")
+                km = AsyncKernelManager(kernel_name=self.kernel_name, transport="ipc", ip=ip)
             await km.start_kernel()
             client = km.client()
             client.start_channels()

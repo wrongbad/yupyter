@@ -11,10 +11,15 @@ git clone https://github.com/wrongbad/yupyter
 cd yupyter
 python3 -m venv .venv && . .venv/bin/activate
 pip install -e .
-yupyter notes.md
+cd examples && yupyter
 ```
 
-Then type in the prompt bar:
+`yupyter notes.md` serves the current directory and opens `notes.md`; `yupyter some/dir` (or just `yupyter`)
+serves that directory and shows the file drawer, where you can open any notebook under it or create one.
+The server never reaches outside that root. One kernel per notebook; files edited on disk while open are
+picked up (or flagged if you have unsaved changes).
+
+Then click "+ New cell", type, and press Shift+Enter:
 
 ```
 2 + 2

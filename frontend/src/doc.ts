@@ -3,7 +3,8 @@
 // never write `exec` or `outputs` (the server does).
 import * as Y from "yjs";
 import { WebsocketProvider } from "y-websocket";
-import { getUser, userState } from "./user";
+import * as decoding from "lib0/decoding";
+import { getUser, setIdentity, userState } from "./user";
 
 export type Output = Record<string, any>;
 
@@ -11,6 +12,9 @@ export interface ExecState {
   state: "idle" | "queued" | "running" | "done" | "error";
   count: number | null;
   runId?: string;
+  /** agent cells: what the last run changed, and whether it is currently undone (shared by all clients) */
+  summary?: { inserted: number; edited: number; deleted: number } | null;
+  undone?: boolean;
   started?: number | null;
   finished?: number | null;
 }
@@ -33,16 +37,37 @@ export const ycells = ydoc.getMap<Y.Map<any>>("cells");
 export const ymeta = ydoc.getMap<any>("meta");
 export const ykernels = ydoc.getMap<any>("kernels");
 
+/** `a/b c.md` -> `a/b%20c.md` (slashes stay). */
+export const encodePath = (p: string) => p.split("/").map(encodeURIComponent).join("/");
+/** Notebook path (relative to the server root) from the URL `/n/<path>`; null on the home page. */
+export const notebookPath: string | null = (() => {
+  const m = location.pathname.match(/^\/n\/(.+)$/);
+  return m ? decodeURIComponent(m[1]) : null;
+})();
+/** `apiUrl("/api/run")` -> `/api/run/<this notebook>`. */
+export const apiUrl = (prefix: string) => `${prefix}/${encodePath(notebookPath ?? "")}`;
+
 const proto = location.protocol === "https:" ? "wss:" : "ws:";
 export const provider = new WebsocketProvider(
   `${proto}//${location.host}/ws`,
-  "main",
+  notebookPath ? encodePath(notebookPath) : "",
   ydoc,
+  { connect: notebookPath !== null },
 );
 export const awareness = provider.awareness;
 
 const user = getUser();
-awareness.setLocalStateField("user", userState());
+
+/** Server extension message (yupyter/doc/store.py): our per-connection letter + colour. */
+const MSG_IDENTITY = 100;
+provider.messageHandlers[MSG_IDENTITY] = (_enc, dec) => {
+  setIdentity(JSON.parse(decoding.readVarString(dec)));
+  publishUser();
+};
+
+export function publishUser() {
+  awareness.setLocalStateField("user", userState());
+}
 
 /** Origin of local structural edits (insert/delete/move cell); the structural UndoManager tracks only this. */
 export const STRUCT_ORIGIN = "struct";
@@ -135,18 +160,20 @@ export function deleteCell(id: string) {
 }
 
 // --- RPC ---------------------------------------------------------------------
-async function post(path: string, body: unknown) {
+export async function post(path: string, body: unknown) {
   const r = await fetch(path, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify(body),
   });
-  if (!r.ok) console.warn(path, r.status, await r.text());
+  if (!r.ok) console.warn(path, r.status, await r.clone().text());
   return r;
 }
 
-export const runCell = (cellId: string) => post("/api/run", { cell_id: cellId, author: user.id });
-export const interruptKernel = (kernel: string) => post("/api/interrupt", { kernel });
+/** `runId` (optional) names the run so the caller can undo it later (agent cells). */
+export const runCell = (cellId: string, runId?: string) =>
+  post(apiUrl("/api/run"), { cell_id: cellId, author: user.id, run_id: runId });
+export const interruptKernel = (kernel: string) => post(apiUrl("/api/interrupt"), { kernel });
 
 /** Subscribe to any structural/exec/output change (but not keystrokes in cell sources). */
 export function onCellsChange(cb: () => void): () => void {

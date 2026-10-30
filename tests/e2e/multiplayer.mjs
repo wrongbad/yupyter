@@ -41,7 +41,7 @@ async function open(name) {
   await page.keyboard.type("set your name");
   await page.keyboard.press("Enter");
   await page.locator(".palette-input").waitFor();
-  await page.keyboard.press("Control+a");
+  await page.keyboard.press("ControlOrMeta+a");
   await page.keyboard.type(name);
   await page.keyboard.press("Enter");
   await page.locator(".palette").waitFor({ state: "detached" });

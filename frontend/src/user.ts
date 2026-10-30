@@ -1,46 +1,51 @@
-// Local identity, persisted in localStorage (no accounts in the POC).
+// Local identity. The stable id (cell authorship) lives in localStorage; the
+// display name + colour come from the server per connection (a letter, unique
+// among live connections) unless the user picked their own name.
 export interface User {
   id: string;
-  name: string;
-  color: string;
 }
 
-const COLORS = ["#e06c75", "#61afef", "#98c379", "#c678dd", "#d19a66", "#56b6c2"];
-const ADJ = ["quiet", "amber", "brisk", "gentle", "lucid", "mellow", "nimble", "plucky", "sunny", "wry"];
-const ANIMAL = ["otter", "heron", "lynx", "newt", "panda", "quokka", "raven", "stoat", "tapir", "wren"];
-const pick = <T,>(a: T[]) => a[Math.floor(Math.random() * a.length)];
-
-function save(u: User) {
-  try {
-    localStorage.setItem("yupyter.user", JSON.stringify(u));
-  } catch {}
+export interface Identity {
+  name: string;
+  color: string;
 }
 
 export function getUser(): User {
   try {
     const raw = localStorage.getItem("yupyter.user");
-    if (raw) return JSON.parse(raw);
+    if (raw) return { id: JSON.parse(raw).id };
   } catch {}
-  const user = {
-    id: Math.random().toString(36).slice(2, 8),
-    name: `${pick(ADJ)}-${pick(ANIMAL)}`,
-    color: pick(COLORS),
-  };
-  save(user);
+  const user = { id: Math.random().toString(36).slice(2, 8) };
+  try {
+    localStorage.setItem("yupyter.user", JSON.stringify(user));
+  } catch {}
   return user;
 }
 
-export function setUserName(name: string) {
-  const cur = getUser();
-  const u = { ...cur, name: name.trim() || cur.name };
-  save(u);
-  return u;
+let identity: Identity | null = null;
+export const setIdentity = (i: Identity) => void (identity = i);
+
+function customName(): string | null {
+  try {
+    return localStorage.getItem("yupyter.name");
+  } catch {
+    return null;
+  }
 }
 
-/** The `user` field published in awareness (see CONTRIBUTING.md). */
+/** Set your display name; empty reverts to the server-assigned letter. */
+export function setUserName(name: string) {
+  try {
+    if (name.trim()) localStorage.setItem("yupyter.name", name.trim());
+    else localStorage.removeItem("yupyter.name");
+  } catch {}
+}
+
+/** The `user` field published in awareness (see CONTRIBUTING.md); null until the server assigns an identity. */
 export function userState() {
-  const u = getUser();
-  return { id: u.id, name: u.name, color: u.color, colorLight: u.color + "33", kind: "human" as const };
+  if (!identity) return null;
+  const { name, color } = identity;
+  return { id: getUser().id, name: customName() || name, color, colorLight: color + "33", kind: "human" as const };
 }
 
 export type Theme = "light" | "dark" | "system";

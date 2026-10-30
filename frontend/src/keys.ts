@@ -1,9 +1,10 @@
-// Global keyboard handling: palette, structural undo, Jupyter-style command mode.
+// Global keyboard handling: palette, undo (cell ops + agent runs), Jupyter-style command mode.
 import { isPaletteOpen, togglePalette } from "./components/Palette";
 import { deleteSelected, insertRelative, isEditable, moveCell, moveSelection, focusCellEditor, runSelected } from "./ops";
 import { getSelected, select } from "./presence/selection";
 import { listCells } from "./doc";
-import { structUndo } from "./undo";
+import { redo, undo } from "./undo";
+import { saveNow } from "./files";
 
 export function installKeys(): () => void {
   let lastD = 0;
@@ -17,7 +18,7 @@ export function installKeys(): () => void {
     }
     if (mod && e.key.toLowerCase() === "s") {
       e.preventDefault();
-      void fetch("/api/save", { method: "POST" });
+      void saveNow();
       return;
     }
     if (isPaletteOpen()) return;
@@ -36,8 +37,8 @@ export function installKeys(): () => void {
       const k = e.key.toLowerCase();
       if (k === "z" || k === "y") {
         e.preventDefault();
-        if (k === "y" || e.shiftKey) structUndo.redo();
-        else structUndo.undo();
+        if (k === "y" || e.shiftKey) redo();
+        else undo();
       }
       return;
     }

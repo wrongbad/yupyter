@@ -1,25 +1,17 @@
 // Built-in palette commands. Importing this module registers them.
 import { registerCommand } from "./commands";
-import { awareness, interruptKernel, listCells } from "./doc";
-import { askText, showShortcuts } from "./components/Palette";
+import { interruptKernel, listCells } from "./doc";
+import { showShortcuts } from "./components/Palette";
+import { renameSelf } from "./presence/peers";
 import { deleteSelected, insertRelative, moveCell, runAll, runSelected } from "./ops";
 import { getSelected } from "./presence/selection";
-import { structUndo } from "./undo";
-import { getUser, isDark, setTheme, setUserName, userState } from "./user";
+import { redo, undo } from "./undo";
+import { saveNow, toggleDrawer } from "./files";
+import { isDark, setTheme } from "./user";
 
 const mod = /Mac|iPhone|iPad/.test(navigator.platform) ? "⌘" : "Ctrl+";
 
-registerCommand({
-  id: "user.setName",
-  title: "Set your name",
-  run: async () => {
-    const n = await askText("Your name", getUser().name);
-    if (n && n.trim()) {
-      setUserName(n);
-      awareness.setLocalStateField("user", userState());
-    }
-  },
-});
+registerCommand({ id: "user.setName", title: "Set your name", run: renameSelf });
 registerCommand({ id: "cell.insertAbove", title: "Insert cell above", shortcut: "A", run: () => void insertRelative("above") });
 registerCommand({ id: "cell.insertBelow", title: "Insert cell below", shortcut: "B", run: () => void insertRelative("below") });
 registerCommand({ id: "cell.delete", title: "Delete cell", shortcut: "D D", run: deleteSelected });
@@ -39,10 +31,11 @@ registerCommand({
   id: "doc.save",
   title: "Save",
   shortcut: mod + "S",
-  run: () => void fetch("/api/save", { method: "POST" }),
+  run: () => void saveNow(),
 });
-registerCommand({ id: "edit.undo", title: "Undo cell operation", shortcut: mod + "Z", run: () => void structUndo.undo() });
-registerCommand({ id: "edit.redo", title: "Redo cell operation", shortcut: mod + "Shift+Z", run: () => void structUndo.redo() });
+registerCommand({ id: "view.files", title: "Toggle file list", run: toggleDrawer });
+registerCommand({ id: "edit.undo", title: "Undo cell operation or agent run", shortcut: mod + "Z", run: undo });
+registerCommand({ id: "edit.redo", title: "Redo cell operation or agent run", shortcut: mod + "Shift+Z", run: redo });
 registerCommand({
   id: "view.theme",
   title: "Toggle light/dark theme",

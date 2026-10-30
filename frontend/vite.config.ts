@@ -3,7 +3,7 @@ import preact from "@preact/preset-vite";
 
 export default defineConfig({
   plugins: [preact()],
-  base: "./",
+  base: "/",
   build: { outDir: "../yupyter/static", emptyOutDir: true },
   server: {
     proxy: {

@@ -178,7 +178,7 @@ We need:
 
 ### Frontend: Preact + CodeMirror instead of JupyterLab
 
-The UI is meant to be a single-column "zen mode" page: prompt bar at the
+The UI is meant to be a single-column "zen mode" page: a "+ New cell" button at the
 bottom, no sidebars or toolbars, Ctrl/Cmd+K for everything else. JupyterLab is
 an IDE built on Lumino with a large plugin system and bundle. Stripping it
 down to one column would have been more work than building the page, and its

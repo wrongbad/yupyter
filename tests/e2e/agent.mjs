@@ -29,6 +29,14 @@ const script = {
 const scriptPath = path.join(dir, "script.json");
 fs.writeFileSync(scriptPath, JSON.stringify(script));
 
+// click "+ New cell", type into the focused editor, run with Shift+Enter
+async function runNew(page, src) {
+  await page.click(".new-cell");
+  await page.waitForFunction(() => document.activeElement?.classList.contains("cm-content"));
+  await page.keyboard.type(src);
+  await page.keyboard.press("Shift+Enter");
+}
+
 const proc = spawn(bin, [nb, "--no-browser"], {
   stdio: ["ignore", "pipe", "inherit"],
   env: { ...process.env, YUPYTER_AGENT_BACKEND: `fake:${scriptPath}` },
@@ -52,11 +60,10 @@ try {
   const page = await ctx.newPage();
   page.on("pageerror", (e) => console.log("pageerror:", e.message));
   await page.goto(url);
-  await page.waitForSelector("#prompt");
   await page.waitForFunction(() => document.querySelector(".app")?.dataset.synced === "true");
 
-  await page.fill("#prompt", "%%claude please graph y=2+x");
-  await page.press("#prompt", "Enter");
+  await runNew(page, "%%claude please graph y=2+x");
+  await page.locator("button.kernel", { hasText: "claude" }).first().waitFor({ timeout: 10000 });
 
   // thinking streams in, open while streaming
   const thinking = page.locator(".agent-thinking").first();
@@ -89,6 +96,44 @@ try {
   await page2.goto(url);
   await page2.locator(".cell-code .outputs img").waitFor({ timeout: 30000 });
   if ((await page2.locator(".agent-tool").count()) !== 2) throw new Error("page 2 missing agent tool lines");
+
+  // --- undo this run -------------------------------------------------------
+  const nCells = (p) => p.locator(".cell-code").count();
+  const undoBtn = page.locator(".run-undo button");
+  await undoBtn.filter({ hasText: "Undo this run" }).waitFor({ timeout: 10000 });
+  const sum = await page.locator(".run-summary").innerText();
+  if (sum !== "Claude inserted 1 cell") throw new Error("unexpected summary: " + sum);
+  if (!/NOT reverted/.test((await undoBtn.getAttribute("title")) || "")) throw new Error("tooltip missing kernel-state warning");
+  await undoBtn.hover();
+  if ((await page.locator(".cell.run-hl").count()) !== 1) throw new Error("hover did not highlight the run's cell");
+  console.log("undo button shown with summary + tooltip, hover highlights the run's cell");
+
+  await undoBtn.click();
+  await page.waitForFunction(() => document.querySelectorAll(".cell-code").length === 1, null, { timeout: 10000 });
+  await page.locator(".run-undo button", { hasText: "Redo" }).waitFor({ timeout: 10000 });
+  await page2.locator(".run-undo button", { hasText: "Redo" }).waitFor({ timeout: 10000 }); // shared state
+  if ((await nCells(page2)) !== 1) throw new Error("collaborator still sees Claude's cell");
+  console.log("undo removed Claude's cell; collaborator sees it and the Redo button");
+
+  await page.locator(".run-undo button", { hasText: "Redo" }).click();
+  await page.waitForFunction(() => document.querySelectorAll(".cell-code").length === 2, null, { timeout: 10000 });
+  await page.locator(".cell-code").nth(1).locator(".outputs img").waitFor({ timeout: 10000 });
+  await page.locator(".run-undo button", { hasText: "Undo this run" }).waitFor({ timeout: 10000 });
+  console.log("redo restored the cell with its output");
+
+  // Ctrl+Z by the user who ran it undoes the run; another user's Ctrl+Z does not
+  const cellCount = (p) => p.evaluate(() => document.querySelectorAll(".cell-code").length);
+  await page2.keyboard.press("Escape");
+  await page2.keyboard.press("Control+z");
+  await page2.waitForTimeout(500);
+  if ((await cellCount(page)) !== 2) throw new Error("another user's Ctrl+Z undid the run");
+  await page.keyboard.press("Escape");
+  await page.keyboard.press("Control+z");
+  await page.waitForFunction(() => document.querySelectorAll(".cell-code").length === 1, null, { timeout: 10000 });
+  await page.locator(".run-undo button", { hasText: "Redo" }).waitFor({ timeout: 10000 });
+  await page.keyboard.press("Control+Shift+z");
+  await page.waitForFunction(() => document.querySelectorAll(".cell-code").length === 2, null, { timeout: 10000 });
+  console.log("Ctrl+Z / Ctrl+Shift+Z by the triggering user undo / redo the run");
   console.log("OK");
 } catch (e) {
   failed = true;

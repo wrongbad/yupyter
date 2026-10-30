@@ -15,10 +15,11 @@ interface Props {
   onRun?: () => void;
   onBlur?: () => void;
   autofocus?: boolean;
+  wrap?: boolean;
 }
 
 /** CodeMirror 6 bound to a Y.Text with remote cursors via awareness. */
-export function Editor({ text, lang, onRun, onBlur, autofocus }: Props) {
+export function Editor({ text, lang, onRun, onBlur, autofocus, wrap }: Props) {
   const host = useRef<HTMLDivElement>(null);
   const cb = useRef({ onRun, onBlur });
   cb.current = { onRun, onBlur };
@@ -46,7 +47,7 @@ export function Editor({ text, lang, onRun, onBlur, autofocus }: Props) {
           drawSelection(),
           syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
           lang === "python" ? python() : markdown(),
-          EditorView.lineWrapping,
+          ...(wrap ? [EditorView.lineWrapping] : []),
           yCollab(text, awareness, { undoManager: undo }),
           EditorView.domEventHandlers({
             blur: () => {
@@ -58,7 +59,7 @@ export function Editor({ text, lang, onRun, onBlur, autofocus }: Props) {
     });
     if (autofocus) view.focus();
     return () => view.destroy();
-  }, [text, lang]);
+  }, [text, lang, wrap]);
 
   return <div class="editor" ref={host} />;
 }

@@ -284,3 +284,68 @@ def set_kernel_status(
     """status: starting | idle | busy | dead"""
     with doc.transaction(origin=origin):
         kernels(doc)[name] = {"status": status, "updated": time.time()}
+
+
+# ---- reload from an externally edited file ----------------------------------
+
+
+def replace_from(doc: Doc, other: Doc, origin: Hashable | None = None) -> None:
+    """Make ``doc`` hold the content of ``other`` in ONE transaction.
+
+    Cells present in both are updated in place (source via a minimal text diff,
+    so editor bindings survive); missing ones are created, extra ones deleted.
+    A cell that is queued/running in ``doc`` keeps its live ``exec`` state.
+    """
+    import difflib
+
+    with doc.transaction(origin=origin):
+        m, om = meta(doc), meta(other)
+        for k in list(m.keys()):
+            if k not in om:
+                del m[k]
+        for k in list(om.keys()):
+            v = om.get(k)
+            v = v.to_py() if hasattr(v, "to_py") else v
+            if m.get(k) != v:
+                m[k] = v
+        cs = cells(doc)
+        want = {cid: cell_snapshot(other, cid) for cid in ordered_ids(other)}
+        for cid in list(cs.keys()):
+            if cid not in want:
+                del cs[cid]
+        for cid, snap in want.items():
+            c = cs.get(cid)
+            if c is None:
+                c = Map()
+                cs[cid] = c
+                c["source"] = Text(snap["source"])
+                c["exec"] = Map(dict(snap["exec"] or {"state": "idle", "count": None}))
+                c["outputs"] = Array()
+                for o in snap["outputs"]:
+                    c["outputs"].append(o)
+            else:
+                text = c["source"]
+                old, new = str(text), snap["source"]
+                if old != new:
+                    sm = difflib.SequenceMatcher(None, old, new, autojunk=False)
+                    for tag, i1, i2, j1, j2 in reversed(sm.get_opcodes()):
+                        if tag == "equal":
+                            continue
+                        if i2 > i1:
+                            del text[i1:i2]
+                        if j2 > j1:
+                            text.insert(i1, new[j1:j2])
+                outs = c["outputs"]
+                if outs.to_py() != snap["outputs"]:
+                    n = len(outs)
+                    if n:
+                        del outs[0:n]
+                    for o in snap["outputs"]:
+                        outs.append(o)
+                ex = c.get("exec")
+                live_state = ex.get("state") if ex is not None else None
+                if live_state not in ("queued", "running"):
+                    c["exec"] = Map(dict(snap["exec"] or {"state": "idle", "count": None}))
+            for k in ("order", "kind", "kernel", "author", "created_by_run"):
+                if c.get(k) != snap[k]:
+                    c[k] = snap[k]

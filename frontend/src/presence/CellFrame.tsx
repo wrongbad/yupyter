@@ -2,7 +2,7 @@ import type { ComponentChildren } from "preact";
 import { usePeers } from "./peers";
 import { select, useSelected } from "./selection";
 
-/** Wraps a cell: selection state, and a coloured left-edge marker for remote participants. */
+/** Wraps a cell: tracks selection (for command-mode keys) and shows a coloured left-edge marker for remote participants. */
 export function CellFrame({ id, children }: { id: string; children: ComponentChildren }) {
   const sel = useSelected();
   const remote = usePeers().filter((p) => !p.self && p.focus === id);
