@@ -6,8 +6,9 @@ build-backend = "hatchling.build"
 name = "yupyter"
 version = "0.0.1"
 description = "A zen-mode notebook on the Jupyter kernel ecosystem, with markdown files, multiplayer editing and agents."
-readme = "plans/poc.md"
+readme = "README.md"
 requires-python = ">=3.10"
+license = "Apache-2.0"
 dependencies = [
   "starlette>=0.37",
   "uvicorn[standard]>=0.30",

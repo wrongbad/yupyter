@@ -2,7 +2,7 @@
 yupyter: 1
 ---
 
-```py {#d07397 author=rwrppt}
+```py {#d07397}
 import numpy as np
 np.pi
 ```
@@ -11,7 +11,7 @@ np.pi
 3.141592653589793
 ```
 
-```claude {#bc8734 author=rwrppt}
+```claude {#bc8734}
 Can you create a graph of y=sin(x) using plotnine
 ```
 
@@ -31,11 +31,11 @@ Can you create a graph of y=sin(x) using plotnine
   plotnine wasn't installed in the kernel, so I added a `%pip install plotnine` cell (`505896`) that installs it into the project's environment. The plot is in cell `87889d`. I also added the numpy import to that cell so it works in a fresh kernel.
 ```
 
-```py {#505896 author=claude run=cb3960f30bb0}
+```py {#505896 run=cb3960f30bb0}
 %pip install plotnine
 ```
 
-```py {#87889d author=claude run=cb3960f30bb0}
+```py {#87889d run=cb3960f30bb0}
 import numpy as np
 import pandas as pd
 from plotnine import ggplot, aes, geom_line, labs

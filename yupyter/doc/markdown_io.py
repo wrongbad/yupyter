@@ -22,7 +22,8 @@ File format::
     ![](analysis.assets/a3f9-1.png)
 
 * Fence info string: first word is a kernel alias, ``{#id key=value ...}``
-  carries the cell id (and ``author`` / ``run`` when set).
+  carries the cell id (and ``run`` for agent-made cells). Cell authorship is
+  live-session only and never written; an ``author=`` in older files is ignored.
 * Each maximal run of non-fence text is one markdown cell.
 * ``output`` / ``error`` fences attach to the cell named by ``for=``.
 * Rich outputs are files in the assets dir, referenced from a marker comment
@@ -162,7 +163,7 @@ def _tokenize(s: str) -> list[str]:
 
 
 def _parse_info(info: str) -> tuple[str, dict[str, str]]:
-    """``'py {#a3f9 author=x}'`` -> ``('py', {'id': 'a3f9', 'author': 'x'})``."""
+    """``'py {#a3f9 run=x}'`` -> ``('py', {'id': 'a3f9', 'run': 'x'})``."""
     info = info.strip()
     first = ""
     if info and not info.startswith("{"):
@@ -419,7 +420,7 @@ def load_markdown(text: str, assets_dir: Path | None = None) -> Doc:
             a = it["attrs"]
             schema.insert_cell(
                 doc, None, "code", _resolve_kernel(it["word"], overrides), it["source"],
-                a.get("author") or None, a.get("run") or None,
+                None, a.get("run") or None,
                 origin=schema.SERVER_ORIGIN, cell_id=it["id"],
             )
         else:
@@ -518,8 +519,6 @@ def dump_markdown(doc: Doc, assets_dir: Path) -> str:
                 blocks.append(src)
             continue
         attrs = [f"#{cid}"]
-        if cell["author"]:
-            attrs.append(f"author={_quote_value(str(cell['author']))}")
         if cell["created_by_run"]:
             attrs.append(f"run={_quote_value(str(cell['created_by_run']))}")
         word = _reverse_alias(cell["kernel"] or DEFAULT_KERNEL, table)

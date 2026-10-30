@@ -6,7 +6,7 @@ collaboration, scheduling and frontend. This page explains where the line
 sits and why each rebuilt piece is ours.
 
 Design background is in [plans/poc.md](../plans/poc.md); module details are in
-[CONTRIBUTING.md](../CONTRIBUTING.md).
+[architecture.md](architecture.md).
 
 ## At a glance
 

@@ -41,7 +41,7 @@ export function setUserName(name: string) {
   } catch {}
 }
 
-/** The `user` field published in awareness (see CONTRIBUTING.md); null until the server assigns an identity. */
+/** The `user` field published in awareness (see docs/architecture.md); null until the server assigns an identity. */
 export function userState() {
   if (!identity) return null;
   const { name, color } = identity;

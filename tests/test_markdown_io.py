@@ -37,7 +37,7 @@ def test_plain_markdown_import(tmp_path):
     ]
 
 
-def test_ids_authors_alias_and_reverse_map(tmp_path):
+def test_ids_runs_alias_and_reverse_map(tmp_path):
     text = (
         "---\nyupyter: 1\naliases:\n  r: ir\n  rr: ir\n---\n\n"
         "```py {#a3f9}\n2 + 2\n```\n\n"
@@ -48,11 +48,11 @@ def test_ids_authors_alias_and_reverse_map(tmp_path):
     cs = {c["id"]: c for c in schema.ordered_cells(d1)}
     assert cs["a3f9"]["kernel"] == "python3"
     assert cs["b2"]["kernel"] == "ir"
-    assert cs["b2"]["author"] == "al ice" and cs["b2"]["created_by_run"] == "run:7"
+    assert cs["b2"]["author"] is None and cs["b2"]["created_by_run"] == "run:7"  # old author= ignored
     assert cs["c3"]["kernel"] == "agent:claude"
     assert schema.meta(d1).get("aliases") == {"r": "ir", "rr": "ir"}
     assert "```py {#a3f9}" in t1
-    assert "```r {#b2 author=" in t1  # shortest alias; quoted author
+    assert "```r {#b2 run=run:7}" in t1  # shortest alias; author not written
     assert "```claude {#c3}" in t1
     assert t1 == t2
     assert "aliases:\n  r: ir" in t1
@@ -119,7 +119,7 @@ def test_outputs_errors_images_roundtrip(tmp_path):
     assert (assets / "a1-3.png").read_bytes().startswith(b"\x89PNG")
     assert (assets / "a1-4.html").read_text() == "<b>x</b>"
     assert "<!-- yupyter:output for=a1 mime=image/png -->\n![](nb.assets/a1-3.png)" in t
-    assert "```error {for=a1}" in t and "```claude {#ag1 author=alice}" in t
+    assert "```error {for=a1}" in t and "```claude {#ag1}" in t
 
     d2 = load_markdown(t, assets)
     outs = schema.get_outputs(d2, "a1")
